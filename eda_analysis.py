@@ -1,123 +1,180 @@
+
+from pathlib import Path
+
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns 
-#Load the real dataset
-penguins = pd.read_csv("Task1-EDA/penguins.csv")
+import seaborn as sns
 
-print("\n--- First 5 Rows ---")
-print(penguins.head())
+# Use the folder containing this script
+BASE_DIR = Path(__file__).resolve().parent
+DATASET_PATH = BASE_DIR / "penguins.csv"
+OUTPUT_DIR = BASE_DIR / "eda_outputs"
+OUTPUT_DIR.mkdir(exist_ok=True)
 
-print("\n--- Dataset Shape ---")
-print(penguins.shape)
+sns.set_theme(style="whitegrid")
 
-print("\n--- Missing Values ---")
-print(penguins.isnull().sum())
-print("\n--- Penguin Species ---")
-print(penguins["species"].value_counts())
+# 1. Load the dataset
+df = pd.read_csv(DATASET_PATH)
 
-print("\n--- Basic Statistics ---")
-print(penguins.describe())
+print("===== DATASET OVERVIEW =====")
+print("Original shape:", df.shape)
+print("\nFirst five rows:")
+print(df.head())
 
-# Count of each penguin species
+print("\nColumn data types:")
+print(df.dtypes)
+
+print("\nDataset information:")
+df.info()
+
+print("\nSummary statistics:")
+print(df.describe(include="all").T)
+
+# 2. Check missing values
+print("\n===== MISSING VALUES BEFORE CLEANING =====")
+print(df.isnull().sum())
+
+# 3. Check and remove duplicate rows
+duplicate_count = df.duplicated().sum()
+print("\nDuplicate rows found:", duplicate_count)
+
+df = df.drop_duplicates().copy()
+print("Shape after removing duplicates:", df.shape)
+
+# 4. Detect potential outliers using the IQR method
+# Detection only: potential outliers are not automatically deleted.
+numeric_cols = df.select_dtypes(include="number").columns
+
+print("\n===== POTENTIAL OUTLIERS (IQR METHOD) =====")
+for col in numeric_cols:
+    q1 = df[col].quantile(0.25)
+    q3 = df[col].quantile(0.75)
+    iqr = q3 - q1
+
+    lower_bound = q1 - 1.5 * iqr
+    upper_bound = q3 + 1.5 * iqr
+
+    outlier_count = (
+        (df[col] < lower_bound) | (df[col] > upper_bound)
+    ).sum()
+
+    print(
+        f"{col}: {outlier_count} potential outliers "
+        f"(bounds: {lower_bound:.2f} to {upper_bound:.2f})"
+    )
+
+# 5. Handle missing values
+# Median is less affected by extreme values than the mean.
+# Mode fills missing categorical values using the most frequent category.
+for col in numeric_cols:
+    if df[col].isnull().any():
+        df[col] = df[col].fillna(df[col].median())
+
+categorical_cols = df.select_dtypes(
+    include=["object", "category", "bool"]
+).columns
+
+for col in categorical_cols:
+    if df[col].isnull().any():
+        mode_values = df[col].mode()
+        if not mode_values.empty:
+            df[col] = df[col].fillna(mode_values.iloc[0])
+
+print("\n===== MISSING VALUES AFTER CLEANING =====")
+print(df.isnull().sum())
+
+# Save cleaned data
+cleaned_path = BASE_DIR / "penguins_cleaned.csv"
+df.to_csv(cleaned_path, index=False)
+print("\nCleaned dataset saved to:", cleaned_path)
+
+# 6. Plot 1: Species distribution
 plt.figure(figsize=(8, 5))
-
-sns.countplot(data=penguins, x="species")
-
-plt.title("Count of Penguin Species")
+sns.countplot(data=df, x="species", hue="species", legend=False)
+plt.title("Distribution of Penguin Species")
 plt.xlabel("Penguin Species")
 plt.ylabel("Number of Penguins")
+plt.tight_layout()
+plt.savefig(OUTPUT_DIR / "species_count.png", dpi=300)
+plt.close()
 
-plt.savefig("Task1-EDA/species_count.png")
-plt.show()
-
-print("Species count graph created successfully!")
-
-# Body mass comparison by species
+# 7. Plot 2: Body mass by species
 plt.figure(figsize=(8, 5))
-
-sns.boxplot(data=penguins, x="species", y="body_mass_g")
-
+sns.boxplot(data=df, x="species", y="body_mass_g", hue="species",
+            legend=False)
 plt.title("Body Mass Distribution by Penguin Species")
 plt.xlabel("Penguin Species")
 plt.ylabel("Body Mass (grams)")
+plt.tight_layout()
+plt.savefig(OUTPUT_DIR / "body_mass_by_species.png", dpi=300)
+plt.close()
 
-plt.savefig("Task1-EDA/body_mass_by_species.png")
-plt.show()
+# 8. Plot 3: Correlation heatmap
+plt.figure(figsize=(9, 6))
+correlation = df.select_dtypes(include="number").corr()
+sns.heatmap(correlation, annot=True, cmap="coolwarm",
+            fmt=".2f", vmin=-1, vmax=1)
+plt.title("Correlation Between Numeric Features")
+plt.tight_layout()
+plt.savefig(OUTPUT_DIR / "correlation_heatmap.png", dpi=300)
+plt.close()
 
-print("Body mass graph created successfully!")
+# 9. Plot 4: Numeric feature distributions
+numeric_features = list(numeric_cols)
 
-# Correlation heatmap
-numeric_data = penguins.select_dtypes(include="number")
-
-correlation = numeric_data.corr()
-
-plt.figure(figsize=(8, 6))
-
-sns.heatmap(correlation, annot=True, cmap="coolwarm", fmt=".2f")
-
-plt.title("Correlation Heatmap of Penguin Measurements")
-
-plt.savefig("Task1-EDA/correlation_heatmap.png")
-plt.show()
-
-print("Correlation heatmap created successfully!")
-
-# Handle missing values
-print("\n--- Missing Values Before Cleaning ---")
-print(penguins.isnull().sum())
-
-# Create a copy of the dataset
-cleaned_penguins = penguins.copy()
-
-# Fill missing numeric values with their column median
-numeric_columns = cleaned_penguins.select_dtypes(include="number").columns
-
-for column in numeric_columns:
-    cleaned_penguins[column] = cleaned_penguins[column].fillna(
-        cleaned_penguins[column].median()
-    )
-
-# Fill missing categorical values with the most common value
-categorical_columns = cleaned_penguins.select_dtypes(
-    include=["object", "category"]
-).columns
-
-for column in categorical_columns:
-    cleaned_penguins[column] = cleaned_penguins[column].fillna(
-        cleaned_penguins[column].mode()[0]
-    )
-
-print("\n--- Missing Values After Cleaning ---")
-print(cleaned_penguins.isnull().sum())
-
-# Save the cleaned dataset
-cleaned_penguins.to_csv("Task1-EDA/penguins_cleaned.csv", index=False)
-
-print("\nCleaned dataset saved successfully!")
-
-# Final EDA Summary
-print("\n========== EDA SUMMARY ==========")
-
-print("\n1. Dataset Overview")
-print(f"Total penguin records: {len(penguins)}")
-print(f"Total columns: {len(penguins.columns)}")
-
-print("\n2. Species Distribution")
-print(penguins["species"].value_counts())
-
-print("\n3. Average Body Mass by Species")
-print(
-    penguins.groupby("species")["body_mass_g"]
-    .mean()
-    .round(2)
+df[numeric_features].hist(
+    figsize=(12, 8),
+    bins=20,
+    edgecolor="black"
 )
+plt.suptitle("Distributions of Numeric Penguin Features")
+plt.tight_layout()
+plt.savefig(OUTPUT_DIR / "feature_distributions.png", dpi=300)
+plt.close()
 
-print("\n4. Average Flipper Length by Species")
-print(
-    penguins.groupby("species")["flipper_length_mm"]
-    .mean()
-    .round(2)
+# 10. Plot 5: Pairwise scatter plots
+pairplot = sns.pairplot(
+    df,
+    vars=numeric_features,
+    hue="species",
+    diag_kind="hist"
 )
+pairplot.figure.suptitle(
+    "Pairwise Relationships Between Numeric Features",
+    y=1.02
+)
+pairplot.savefig(
+    OUTPUT_DIR / "pairwise_scatter_plots.png",
+    dpi=300,
+    bbox_inches="tight"
+)
+plt.close("all")
 
-print("\n5. EDA completed successfully!")
+# 11. Plot 6: Missing values in the original dataset
+original_df = pd.read_csv(DATASET_PATH)
+missing_counts = original_df.isnull().sum()
+missing_counts = missing_counts[missing_counts > 0]
+
+if not missing_counts.empty:
+    plt.figure(figsize=(9, 5))
+    missing_counts.sort_values().plot(kind="bar")
+    plt.title("Missing Values by Feature Before Cleaning")
+    plt.xlabel("Feature")
+    plt.ylabel("Number of Missing Values")
+    plt.xticks(rotation=45, ha="right")
+    plt.tight_layout()
+    plt.savefig(OUTPUT_DIR / "missing_values.png", dpi=300)
+    plt.close()
+
+print("\n===== KEY DATASET FINDINGS =====")
+print("Final dataset shape:", df.shape)
+
+if "species" in df.columns:
+    print("\nNumber of records by species:")
+    print(df["species"].value_counts())
+
+if {"species", "body_mass_g"}.issubset(df.columns):
+    print("\nAverage body mass by species:")
+    print(df.groupby("species")["body_mass_g"].mean().round(2))
+
+print("\nEDA completed. Charts saved in:", OUTPUT_DIR)
